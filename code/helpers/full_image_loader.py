@@ -13,23 +13,11 @@ NUM_HAND_CLASSES = 2
 NUM_YEARS_CLASSES = 3
 NUM_LEVEL_CLASSES = 4 
 
-class ImgTimeSeriesDataset(Dataset):
-    """
-    A PyTorch Dataset for loading time series data represented as sequences of 1-bit images,
-    along with associated metadata for training or evaluation.
-
-    Args:
-        csv_file (str): Path to the CSV file containing metadata and file references.
-        root_dir (str): Root directory where the image data is stored.
-        split (str): The dataset split, e.g., 'train', 'val', or 'test'.
-        transform (callable, optional): A function/transform that takes in a 6-channel
-                                       image tensor (with values 0.0 or 1.0)
-                                       and returns a transformed version.
-                                       Default: None.
-    """
+class FullImgTimeSeriesDataset(Dataset):
     def __init__(self, csv_file: str, root_dir: str, split: str, transform=None):
         # Load the metadata from the CSV file
         self.df = pd.read_csv(csv_file)
+        self.df = self.df[self.df['unique_id'] != 3030]
         self.root_dir = root_dir
         self.transform = transform
         self.split = split
@@ -43,27 +31,13 @@ class ImgTimeSeriesDataset(Dataset):
 
 
     def __len__(self):
-        """Returns the total number of samples in the dataset."""
         return len(self.df)
 
     def __getitem__(self, index: int):
-        """
-        Retrieves a sample from the dataset at the given index.
-
-        Args:
-            index (int): The index of the sample to retrieve.
-
-        Returns:
-            tuple or torch.Tensor:
-                - If split is 'train' or 'val', returns a tuple (image_tensor, label_tensor).
-                - Otherwise (e.g., 'test' split), returns only the image_tensor.
-        """
-        # Retrieve unique identifier and swing information for the current sample
-        uid = str(self.df['unique_id'].iloc[index]) # Ensure UID is a string for path joining
-        swing_folder_name = str(self.df['swing'].iloc[index]) # Ensure swing is a string
+        uid = str(self.df['unique_id'].iloc[index])
 
         # Construct the base path to the directory containing the 6 images for this sample
-        img_folder_path = os.path.join(self.root_dir, uid, swing_folder_name)
+        img_folder_path = os.path.join(self.root_dir, uid)
 
         img_tensors = []
         for img_filename in self.img_filenames:
@@ -125,16 +99,13 @@ class ImgTimeSeriesDataset(Dataset):
 
             return imgs_tensor, swing_mode_one_hot, output_tensor
         else:
-            swing_mode_val = int(float(self.df['mode'].iloc[index]) - 1.0) 
-            swing_mode_idx = torch.tensor(swing_mode_val, dtype=torch.long)
-            swing_mode_one_hot = F.one_hot(swing_mode_idx, num_classes=NUM_SWING_MODE_CLASSES)
             return imgs_tensor, swing_mode_one_hot
-
+        
 if __name__ == "__main__":
     # --- IMPORTANT ---
     # Modify these paths to point to YOUR actual data
-    your_csv_file_path = "data/train/labels.csv"
-    your_root_image_dir = "data/train/images"
+    your_csv_file_path = "data/39_Training_Dataset/train_info.csv"
+    your_root_image_dir = "data/train/full_images"
     # Specify the split you want to test (e.g., 'train', 'val', 'test')
     your_split = 'train'
 
@@ -146,7 +117,7 @@ if __name__ == "__main__":
     # 1. Instantiate the Dataset
     print("\n--- Testing ImgTimeSeriesDataset with your data ---")
     try:
-        dataset = ImgTimeSeriesDataset(
+        dataset = FullImgTimeSeriesDataset(
             csv_file=your_csv_file_path,
             root_dir=your_root_image_dir,
             split=your_split, # Use the specified split
@@ -175,11 +146,11 @@ if __name__ == "__main__":
             print(f"\nSample {i}:")
             try:
                 if your_split == 'train' or your_split == 'val':
-                    image_tensor, label_tensor = dataset[i]
+                    image_tensor, sw ,label_tensor = dataset[i]
                     print(f"  Image tensor shape: {image_tensor.shape}, dtype: {image_tensor.dtype}")
                     print(f"  Label tensor: {label_tensor}, shape: {label_tensor.shape}, dtype: {label_tensor.dtype}")
                 else: # For 'test' split
-                    image_tensor = dataset[i]
+                    image_tensor, sw = dataset[i]
                     print(f"  Image tensor shape: {image_tensor.shape}, dtype: {image_tensor.dtype}")
 
                 # Verify image tensor values are 0.0 or 1.0
@@ -209,17 +180,15 @@ if __name__ == "__main__":
             
             for batch_idx, data_batch in enumerate(dataloader):
                 if your_split == 'train' or your_split == 'val':
-                    images, sw_mode ,labels = data_batch
+                    images, sw, labels = data_batch
                     print(f"Batch {batch_idx + 1}:")
                     print(f"  Images batch shape: {images.shape}, dtype: {images.dtype}")
-                    print(f"  Swing mode shape: {sw_mode.shape}, dtype: {sw_mode.dtype}")
                     print(f"  Labels batch shape: {labels.shape}, dtype: {labels.dtype}")
                 else: # For 'test' split
-                    images, sw_mode = data_batch
+                    images, sw = data_batch
                     print(f"Batch {batch_idx + 1}:")
                     print(f"  Images batch shape: {images.shape}, dtype: {images.dtype}")
-                    print(f"  Swing mode shape: {sw_mode.shape}, dtype: {sw_mode.dtype}")
-                    
+
                 if batch_idx >= 1: # Test a couple of batches
                     break
             print("DataLoader test successful for a few batches.")

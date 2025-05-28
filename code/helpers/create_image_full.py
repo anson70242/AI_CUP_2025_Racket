@@ -17,6 +17,8 @@ def _create_full_imgs(
     figsize_height_inches = target_height_px / dpi
 
     for file_name_without_extension in files:
+        if file_name_without_extension == 3030: continue
+
         file_path = f'{data_path}{file_name_without_extension}.txt'
         
         df = pd.read_csv(file_path, sep=' ', names=column_names)

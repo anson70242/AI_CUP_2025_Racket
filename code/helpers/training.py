@@ -8,8 +8,8 @@ def train_epoch(data_loader: DataLoader, model: nn.Module, loss_fn, optimizer: o
     model.train()  # Set the model to training mode
     running_loss = 0.0
     num_batches = len(data_loader) # Get total number of batches
-    for batch_idx, (inputs, _, targets) in enumerate(data_loader):
-        inputs, targets = inputs.to(device), targets.to(device)
+    for batch_idx, (inputs, sw_mode, targets) in enumerate(data_loader):
+        inputs, targets, sw_mode = inputs.to(device), targets.to(device), sw_mode.to(device)
         if task == 'gender':
             targets = targets[:, 0]
         elif task == 'hand':
@@ -25,7 +25,7 @@ def train_epoch(data_loader: DataLoader, model: nn.Module, loss_fn, optimizer: o
         targets = targets.long()
         
         optimizer.zero_grad()  # Clear previous gradients
-        outputs = model(inputs) # Forward pass
+        outputs = model(inputs, sw_mode) # Forward pass
         # print("model out:", outputs, targets)
         loss = loss_fn(outputs, targets) # Calculate loss
         loss.backward()  # Backpropagate the loss
@@ -41,16 +41,29 @@ def train_epoch(data_loader: DataLoader, model: nn.Module, loss_fn, optimizer: o
     avg_epoch_loss = running_loss / num_batches
     return avg_epoch_loss
 
-def val_epoch(data_loader: DataLoader, model: nn.Module, loss_fn, device: torch.device):
+def val_epoch(data_loader: DataLoader, model: nn.Module, loss_fn, device: torch.device, task = ''):
     model.eval()
     running_loss = 0.0
     num_batches = len(data_loader) # Get total number of batches
     with torch.no_grad():
-        for batch_idx, (inputs, _, targets) in enumerate(data_loader):
-            inputs, targets = inputs.to(device), targets.to(device)
+        for batch_idx, (inputs, sw_mode, targets) in enumerate(data_loader):
+            inputs, targets_all, sw_mode = inputs.to(device), targets.to(device), sw_mode.to(device) # Renamed targets to targets_all
 
-            outputs = model(inputs) # Forward pass
-            loss = loss_fn(outputs, targets) # Calculate loss
+            if task == 'gender':
+                current_targets = targets_all[:, 0]
+            elif task == 'hand':
+                current_targets = targets_all[:, 1]
+            elif task == 'year':
+                current_targets = targets_all[:, 2]
+            elif task == 'level':
+                current_targets = targets_all[:, 3]
+            else:
+                print(f"Validation: Task {task} not supported")
+
+            current_targets = current_targets.long()
+
+            outputs = model(inputs, sw_mode) # Forward pass
+            loss = loss_fn(outputs, current_targets) # Calculate loss
 
             running_loss += loss.item()
 
@@ -94,7 +107,7 @@ def train_val_model(train_loader: DataLoader,
 
         # Validation phase
         print("Validation Phase...")
-        avg_val_loss = val_epoch(val_loader, model, loss_fn, device)
+        avg_val_loss = val_epoch(val_loader, model, loss_fn, device, task)
         val_losses_per_epoch.append(avg_val_loss)
 
         print(f"Epoch [{epoch+1}/{epochs}] Summary | "

@@ -1,7 +1,7 @@
 from models.tcn import TemporalConvNet
 from models.lstm import BasicLSTMClassifier
 from models.mlp import MLP
-from models.resnet50 import MyResNet50
+from AI_CUP_2025_Racket.code.models.resnet import MyResNet50
 
 import torch.nn as nn
 
