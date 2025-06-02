@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Subset
-from helpers import DataBuilder, ImgTimeSeriesDataset, train_val_model, plot_loss, predict, predict_logits
+from helpers import DataBuilder, ImgTimeSeriesDataset, train_val_model, plot_loss, predict, predict_logits, predict_val
 from torch.utils.data import random_split, DataLoader
 from models import MyResNet
 import pandas as pd
@@ -12,9 +12,10 @@ CONFIG = {
     'lr': 1e-5,
     'epochs': 50,
     'task': 'gender',
+    'early_stop': 20,
 }
 
-def main(make_data=False, train=False, pred=False):
+def main(make_data=False, train=False, pred=False, pred_val=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = 'cpu'
 
@@ -22,15 +23,25 @@ def main(make_data=False, train=False, pred=False):
     if task == 'gender':
         num_classes = 2
         columns=['label_1', 'label_2']
+        best_epoch = 43
     elif task == 'hand':
         num_classes = 2
         columns=['hand_1', 'hand_2']
+        best_epoch = 50
     elif task == 'year':
         num_classes = 3
         columns=['year_0', 'year_1', 'year_2']
+        best_epoch = 42
     elif task == 'level':
         num_classes = 4
         columns=['level_2', 'level_3', 'level_4', 'level_5']
+        best_epoch = 50
+    elif task == 'all':
+        num_classes = 11
+        columns=['label_1', 'label_2', 
+                 'hand_1', 'hand_2', 
+                 'year_0', 'year_1', 'year_2', 
+                 'level_2', 'level_3', 'level_4', 'level_5']
     else:
         print(f"Main: Task {task} not supported")
         exit()
@@ -82,18 +93,19 @@ def main(make_data=False, train=False, pred=False):
 
         model = MyResNet(num_input_channels=6, num_classes=num_classes)
         loss_fn = nn.CrossEntropyLoss() # take logit as input
-        optimizer = optim.Adam(model.parameters(), CONFIG['lr'])
+        optimizer = optim.AdamW(model.parameters(), CONFIG['lr'], weight_decay=0.01)
         # print(model)
 
         t_losses, v_losses = train_val_model(
-            train_loader = DataLoader(dataset = train_dataset, batch_size=CONFIG['batch_size'], shuffle=True),
-            val_loader = DataLoader(dataset = train_dataset, batch_size=CONFIG['batch_size'], shuffle=False),
+            train_loader = DataLoader(dataset = train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4),
+            val_loader = DataLoader(dataset = train_dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=4),
             model=model,
             epochs=CONFIG['epochs'],
             loss_fn=loss_fn,
             optimizer=optimizer,
             task=task,
-            device=device
+            device=device,
+            early_stop_patience = CONFIG['early_stop'],
         )
 
         print(t_losses, v_losses)
@@ -102,7 +114,7 @@ def main(make_data=False, train=False, pred=False):
     if pred:
         # load model
         model = MyResNet(num_input_channels=6, num_classes=num_classes)
-        state_dict = torch.load('trained_models/level_best_resnet152_epx50.pth')
+        state_dict = torch.load(f'trained_models/{task}_best_model_epx{best_epoch}.pth')
         model.load_state_dict(state_dict)
         model.to(device)
         # print(model)
@@ -125,7 +137,7 @@ def main(make_data=False, train=False, pred=False):
 
         # test_dataset = test_dataset_subset 
 
-        test_loader = DataLoader(dataset = test_dataset, batch_size=1, shuffle=False)
+        test_loader = DataLoader(dataset = test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
         predictions = predict_logits(
             data_loader=test_loader,
@@ -139,6 +151,49 @@ def main(make_data=False, train=False, pred=False):
         df = pd.DataFrame(predictions, columns=columns)
         print(df.head(), "\n", df.shape)
         df.to_csv(f'predictions/{task}_pred.csv', index=False)
+    
+    if pred_val:
+        # load model
+        model = MyResNet(num_input_channels=6, num_classes=num_classes)
+        state_dict = torch.load(f'trained_models/{task}_best_model_epx{best_epoch}_1.pth')
+        model.load_state_dict(state_dict)
+        model.to(device)
+        # print(model)
+
+        csv_file = "data/train/labels.csv"
+        img_dir = "data/train/images"
+        split = "train"
+
+        full_dataset = ImgTimeSeriesDataset(
+            csv_file=csv_file,
+            root_dir=img_dir,
+            split=split, 
+        )
+
+        dataset_size = len(full_dataset)
+        val_split = 0.2
+        val_size = int(val_split * dataset_size)
+        train_size = dataset_size - val_size
+
+        # Split the dataset
+        generator = torch.Generator().manual_seed(42)
+        train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
+        val_loader = DataLoader(dataset = val_dataset, batch_size=1, shuffle=False, num_workers=4)
+
+        y_true, y_pred = predict_val(
+            data_loader=val_loader,
+            model=model,
+            device=device,
+            task=task,
+        )
+
+        # Saving result
+        print(y_true, y_pred)
+                
+        data = {'y_true': y_true, 'y_pred': y_pred}
+        df = pd.DataFrame(data)
+        df.to_csv(f'predictions/val/{task}_val.csv', index=False)
+                
 
 if __name__ == '__main__':
-    main(make_data=False, train=True, pred=False)
+    main(make_data=False, train=False, pred=True, pred_val=False)

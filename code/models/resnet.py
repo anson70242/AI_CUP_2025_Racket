@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision.models as models
 
 class MyResNet(nn.Module):
-    def __init__(self, num_input_channels: int, num_classes: int, sw_mode_feature_length: int = 10):
+    def __init__(self, num_input_channels: int, num_classes: int, sw_mode_feature_length: int = 10): # , multi_task = False
         """
         Initializes the MyResNet model.
 
@@ -39,10 +39,24 @@ class MyResNet(nn.Module):
         #    Get the number of output features from the ResNet's pooling layer.
         num_ftrs_from_resnet = self.base_model.fc.in_features
         
+        self.fc = nn.Linear(num_ftrs_from_resnet + sw_mode_feature_length, num_classes)
+        
         #    Replace the original fc layer with a new one that accepts the
         #    concatenated features (ResNet features + sw_mode features).
         #    This new fc layer is stored separately as self.fc
-        self.fc = nn.Linear(num_ftrs_from_resnet + sw_mode_feature_length, num_classes)
+        # if multi_task:
+        #     self.log_var_gender = nn.Parameter(torch.tensor(0.0))
+        #     self.log_var_hand = nn.Parameter(torch.tensor(0.0))
+        #     self.log_var_year = nn.Parameter(torch.tensor(0.0))
+        #     self.log_var_level = nn.Parameter(torch.tensor(0.0))
+            
+        #     self.fc = nn.Linear(num_ftrs_from_resnet + sw_mode_feature_length, 1024)
+        #     self.gender_head = nn.Linear(1024, 2)
+        #     self.hand_head = nn.Linear(1024, 2)
+        #     self.year_head = nn.Linear(1024, 3)
+        #     self.level_head = nn.Linear(1024, 4)
+        # else:
+        #     self.fc = nn.Linear(num_ftrs_from_resnet + sw_mode_feature_length, num_classes)
 
     def forward(self, x: torch.Tensor, sw_mode: torch.Tensor) -> torch.Tensor:
         """
@@ -68,8 +82,18 @@ class MyResNet(nn.Module):
         combined_features = torch.cat((features_flattened, sw_mode), dim=1)
         
         # 5. Pass the combined features through the new fully connected layer.
-        output = self.fc(combined_features)
+        # if self.multi_task:
+        #     hidden = self.fc(combined_features)
+        #     gender_out = self.gender_head(hidden)
+        #     hand_out = self.hand_head(hidden)
+        #     year_out = self.year_head(hidden)
+        #     level_out = self.level_head(hidden)
+        #     return gender_out, hand_out, year_out, level_out
+        # else:
+        #     output = self.fc(combined_features)
+        #     return output
         
+        output = self.fc(combined_features)
         return output
 
 if __name__ == '__main__':
