@@ -2,3 +2,4 @@
 data/
 !data/data.txt
 trained_models/
+predictions/
